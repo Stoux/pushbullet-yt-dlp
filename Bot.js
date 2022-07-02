@@ -1,6 +1,7 @@
 import axios from "axios";
+import http from 'https';
 import { spawn } from 'node:child_process';
-import { rmSync, copyFileSync, existsSync } from 'fs';
+import { rmSync, copyFileSync, existsSync, createWriteStream, unlinkSync } from 'fs';
 
 const STATE_WAITING_FOR_URL = 'url';
 const STATE_IN_PROGRESS = 'in_progress';
@@ -23,6 +24,15 @@ export class Bot {
         this.lastSourceDevice = push.source_device_iden;
 
         if (this.state === STATE_WAITING_FOR_URL) {
+            // Download a file that's uploaded through Pushbullet
+            if (push.file_url) {
+                this.currentUrl = push.file_url;
+                console.log('Downloading PushBullet File:', push.file_name);
+                this.state = STATE_IN_PROGRESS;
+                this.downloadFile(push.file_name)
+                return;
+            }
+
             if (!push.url) {
                 console.error('Received push without URL while waiting for URL.');
                 this.sendReply('Currently waiting for an URL to download, no URL given.');
@@ -116,6 +126,32 @@ export class Bot {
                 this.sendReply(`Failed to download URL: '${this.currentUrl}'. Try again.`);
                 this.currentUrl = undefined;
             }
+        });
+    }
+
+    downloadFile(name) {
+        const targetPath = process.env.DOWNLOAD_FOLDER + '/' + name;
+        const file = createWriteStream(targetPath);
+
+        // Fetch the file & pipe into the destination
+        http.get(this.currentUrl, (response) => {
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close(() => {
+                    const splitName = /^(.+)\.(\w{2,5})$/.exec(name);
+                    this.downloadedFile = [ splitName[1], splitName[2] ];
+                    this.state = STATE_WAITING_FOR_NAME;
+                    console.log(`Downloaded file: ${this.getDownloadedFile()}`);
+                    this.sendReply(`Downloaded file '${this.downloadedFile[0]}' (${this.downloadedFile[1]}). Please send new file name (without extension) or type CANCEL:`)
+                });
+            });
+        }).on('error', (err) => { // Handle errors
+            unlinkSync(targetPath);
+
+            console.error('Failed to download PushBullet file', err);
+            this.state = STATE_WAITING_FOR_URL;
+            this.sendReply(`Failed to download URL: '${this.currentUrl}'. Try again.`);
+            this.currentUrl = undefined;
         });
     }
 
