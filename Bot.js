@@ -18,6 +18,7 @@ export class Bot {
         this.lastSourceDevice = undefined;
         this.currentUrl = undefined;
         this.downloadedFile = [ 'name', 'extension' ];
+        this.deletePushes = [];
     }
 
     onPushReceived(push) {
@@ -29,6 +30,7 @@ export class Bot {
                 this.currentUrl = push.file_url;
                 console.log('Downloading PushBullet File:', push.file_name);
                 this.state = STATE_IN_PROGRESS;
+                this.storePushForDeletion(push.iden);
                 this.downloadFile(push.file_name)
                 return;
             }
@@ -43,6 +45,7 @@ export class Bot {
             const url = this.currentUrl = push.url;
             console.log('Downloading URL: ' + url);
             this.state = STATE_IN_PROGRESS;
+            this.storePushForDeletion(push.iden);
             this.downloadUrl();
         } else if (this.state === STATE_WAITING_FOR_NAME) {
             const finalName = this.getValidName(push.body);
@@ -59,6 +62,8 @@ export class Bot {
                 rmSync(downloadedPath);
                 console.log('Resetting state');
             } else {
+                this.storePushForDeletion(push.iden);
+
                 console.log('New file name received:', finalName, '| Checking for conflict');
                 const downloadedPath = process.env.DOWNLOAD_FOLDER + '/' + this.getDownloadedFile();
                 const newFileName = finalName + '.' + this.downloadedFile[1];
@@ -66,7 +71,7 @@ export class Bot {
 
                 if (existsSync(newFilePath)) {
                     console.error('Conflict, already exists:', newFilePath);
-                    this.sendReply(`Error: File ${newFileName} already exists in target folder. Try another name or type CANCEL.`);
+                    this.sendReply(`Error: File ${newFileName} already exists in target folder. Try another name or type CANCEL.`, true);
                     return;
                 }
 
@@ -82,16 +87,16 @@ export class Bot {
                     this.sendReply('File downloaded: ' + newFilePath);
                 }
 
+                this.cleanPushes();
+
                 console.log('Done! Cleaning up.');
             }
 
             // Clean up state & reset.
-            this.state = STATE_WAITING_FOR_URL;
-            this.downloadedFile = undefined;
-            this.currentUrl = undefined;
+            this.reset();
         } else if (this.state === STATE_IN_PROGRESS) {
             console.error('Currently in progress, unable to handle request');
-            this.sendReply('An action is currently in progress. Please wait.');
+            this.sendReply('An action is currently in progress. Please wait.', true);
         }
     }
 
@@ -119,12 +124,11 @@ export class Bot {
                 this.downloadedFile = fileName;
                 this.state = STATE_WAITING_FOR_NAME;
                 console.log(`Downloaded file: ${this.getDownloadedFile()}`);
-                this.sendReply(`Downloaded file '${this.downloadedFile[0]}' (${this.downloadedFile[1]}). Please send new file name (without extension) or type CANCEL:`)
+                this.sendReply(`Downloaded file '${this.downloadedFile[0]}' (${this.downloadedFile[1]}). Please send new file name (without extension) or type CANCEL:`, true)
             } else {
                 console.error('Incorrect response code or file name not detected', code, fileName);
-                this.state = STATE_WAITING_FOR_URL;
                 this.sendReply(`Failed to download URL: '${this.currentUrl}'. Try again.`);
-                this.currentUrl = undefined;
+                this.reset();
             }
         });
     }
@@ -142,16 +146,15 @@ export class Bot {
                     this.downloadedFile = [ splitName[1], splitName[2] ];
                     this.state = STATE_WAITING_FOR_NAME;
                     console.log(`Downloaded file: ${this.getDownloadedFile()}`);
-                    this.sendReply(`Downloaded file '${this.downloadedFile[0]}' (${this.downloadedFile[1]}). Please send new file name (without extension) or type CANCEL:`)
+                    this.sendReply(`Downloaded file '${this.downloadedFile[0]}' (${this.downloadedFile[1]}). Please send new file name (without extension) or type CANCEL:`, true)
                 });
             });
         }).on('error', (err) => { // Handle errors
             unlinkSync(targetPath);
 
             console.error('Failed to download PushBullet file', err);
-            this.state = STATE_WAITING_FOR_URL;
             this.sendReply(`Failed to download URL: '${this.currentUrl}'. Try again.`);
-            this.currentUrl = undefined;
+            this.reset();
         });
     }
 
@@ -175,7 +178,18 @@ export class Bot {
         return body;
     }
 
-    sendReply(message) {
+    reset() {
+        this.state = STATE_WAITING_FOR_URL;
+        this.downloadedFile = undefined;
+        this.currentUrl = undefined;
+        this.deletePushes = [];
+    }
+
+    /**
+     * @param {string} message The message to send the user
+     * @param {boolean} [shouldDeletePush] Whether this push should be deleted after the download has been completed
+     */
+    sendReply(message, shouldDeletePush) {
         axios.post('https://api.pushbullet.com/v2/pushes', {
             type: 'note',
             body: 'BOT: ' + message,
@@ -185,9 +199,31 @@ export class Bot {
             headers: {
                 'Access-Token': process.env.PUSHBULLET_TOKEN,
             }
+        }).then(response => {
+            if (shouldDeletePush) {
+                this.storePushForDeletion(response.data.iden);
+            }
         })
     }
 
+    storePushForDeletion(id) {
+        if (process.env.DELETE_PUSHES === 'true') {
+            this.deletePushes.push(id);
+        }
+    }
+
+    cleanPushes() {
+        if (this.deletePushes.length) {
+            this.deletePushes.forEach(id => {
+                console.log('Deleting Push:', id);
+                axios.delete(`https://api.pushbullet.com/v2/pushes/${id}`, {
+                    headers: {
+                        'Access-Token': process.env.PUSHBULLET_TOKEN,
+                    }
+                })
+            })
+        }
+    }
 
 
 }
