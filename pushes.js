@@ -1,6 +1,6 @@
 import axios from "axios";
 
-let lastCheck = new Date().getTime() / 1000 - 3600; // TODO: Remove debugging minutes
+let lastCheck = new Date().getTime() / 1000;
 
 export async function getLatestPushFor(deviceId) {
     const pushes = (await axios.get('https://api.pushbullet.com/v2/pushes', {
