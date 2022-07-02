@@ -1,6 +1,6 @@
 import axios from "axios";
 import { spawn } from 'node:child_process';
-import { rmSync, renameSync, existsSync } from 'fs';
+import { rmSync, copyFileSync, existsSync } from 'fs';
 
 const STATE_WAITING_FOR_URL = 'url';
 const STATE_IN_PROGRESS = 'in_progress';
@@ -60,8 +60,10 @@ export class Bot {
                     return;
                 }
 
-                console.log('Moving file from', downloadedPath, 'to', newFilePath);
-                renameSync(downloadedPath, newFilePath);
+                console.log('Copying file from', downloadedPath, 'to', newFilePath);
+                copyFileSync(downloadedPath, newFilePath);
+                console.log('Removing downloaded file');
+                rmSync(downloadedPath);
 
                 // Notify the user
                 if (process.env.BASE_WEB_FOLDER_URL) {
