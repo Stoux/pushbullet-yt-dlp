@@ -163,11 +163,13 @@ export class Bot {
     }
 
     getValidName(body) {
+        body = body.replace(/\s+/, '');
+
         if (!body) {
             return undefined;
         }
 
-        if (/(\s|\n|\/)+/.test(body)) {
+        if (/[\n\/]+/.test(body)) {
             return undefined;
         }
 
