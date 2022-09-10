@@ -162,8 +162,13 @@ export class Bot {
         return this.downloadedFile ? `${this.downloadedFile[0]}.${this.downloadedFile[1]}` : undefined;
     }
 
+
+    /**
+     * @param {string} body
+     * @return {undefined|string}
+     */
     getValidName(body) {
-        body = body.replace(/\s+/, '');
+        body = body.replaceAll(/\s+/, '');
 
         if (!body) {
             return undefined;
