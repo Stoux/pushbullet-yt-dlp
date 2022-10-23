@@ -168,7 +168,7 @@ export class Bot {
      * @return {undefined|string}
      */
     getValidName(body) {
-        body = body.replaceAll(/\s+/, '');
+        body = body.replaceAll(/\s+/g, '');
 
         if (!body) {
             return undefined;
